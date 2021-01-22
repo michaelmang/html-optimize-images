@@ -1,0 +1,1004 @@
+<main class="w-full max-w-screen-sm"><h4>What You’re Getting In To</h4>
+<p>
+  A lengthy discussion on general principles for testing frontend code,
+  different approaches for snapshot testing React component with Jest, and a
+  proposal and experiment/tutorial on using Cypress screenshot testing to
+  replace Jest snapshot testing for React components.
+</p>
+<p>
+  This is not a short and sweet tutorial for beginners that I usually love to
+  do. However, I try to be mindful of not just tossing out technical words
+  without explanation.
+</p>
+<p>
+  <a href="/blog/jest-snapshot-testing-for-react-components-an-honest-assessment">This article is a follow-up to a previous article on how I do Jest snapshot
+    testing. I highly recommend reading that first.</a>
+</p>
+<h4>The Deficiency of Shallow Jest Snapshot Testing</h4>
+<p>
+  <a href="/blog/jest-snapshot-testing-for-react-components-an-honest-assessment">I have written before about my preferred pattern for testing the rendered
+    output of React components.</a>
+</p>
+<p>
+  I suggest you read that article first but the TL;DR is that I like to “set the
+  boundary” for my Jest snapshots of React components to a single component.
+</p>
+<p>Let’s say I had a React component with the following hierarchy:</p>
+<pre class="hljs javascript"><code class="jsx">
+<span class="hljs-comment">// ParentComponent</span>
+<span class="hljs-comment">// ChildComponent</span>
+<span class="hljs-comment">// GrandChildComponent</span>
+<span class="hljs-comment">// NodeModulesComponent</span>
+<span class="hljs-comment">// NodeModulesChildComponent</span>
+
+
+<span class="hljs-comment">// ParentComponent.jsx</span>
+<span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">ParentComponent</span>(<span class="hljs-params"></span>) </span>{
+  <span class="hljs-keyword">return</span> (
+    <span class="xml"><span class="hljs-tag">&lt;<span class="hljs-name">div</span>&gt;</span>
+      <span class="hljs-tag">&lt;<span class="hljs-name">ChildComponent</span> /&gt;</span> // renders GranChildComponent
+      <span class="hljs-tag">&lt;<span class="hljs-name">NodeMoudlesComponent</span> /&gt;</span> // renders NodeModulesChildComponent
+    <span class="hljs-tag">&lt;/<span class="hljs-name">div</span>&gt;</span></span>
+  )
+}
+</code></pre>
+<p>
+  I want my snapshot file to match what I see in the component I am testing
+  (<code class="inline-code">ParentComponent</code> in this example). I can
+  achieve this by mocking out
+  <code class="inline-code">ChildComponent</code> and
+  <code class="inline-code">NodeModulesComponent</code> so that the Jest
+  snapshot does not render any further down the hierarchy as it generates the
+  snapshot.
+</p>
+<p>
+  I have found this approach to be much more readable (since I can easily look
+  at the <code class="inline-code">return</code> of the component I am testing
+  and compare it to the generated snapshot since they share the same
+  boundaries–not having to worry about all the layers between what the parent
+  component returns and what it ultimately renders all the way down the chain).
+</p>
+<p>
+  There are some common objections to this approach that I have not found to be
+  a problem after using it in a real-world codebase for over a year.
+</p>
+<p>
+  Some might say that this requires you to have to write more tests. I woudl
+  indeed have to write a test for
+  <code class="inline-code">ParentComponent</code>,
+  <code class="inline-code">ChildComponent</code>,
+  <code class="inline-code">GrandChildComponent</code>, etc., instead of testing
+  them all together by letting my snapshots render all the way down the chain.
+</p>
+<p>
+  My response, however, would be that while you might write more tests, the test
+  at each component in the hierarchy tends to small, readable, and manageable.
+  Mount-based testing (testing through a chunk of the hierarchy), in my humble
+  opinion, can lead to one big, confusing blob of tests. Perhaps, there are
+  solutions to this that I’m not aware of.
+</p>
+<p>
+  Another objection is that snapshot files can be hard to interpret when trying
+  to compare a snapshot in Scenario A (everything renders) and Scenario B (one
+  small piece no longer renders).
+</p>
+<p>
+  My response would be that using a tool like
+  <a href="https://github.com/jest-community/snapshot-diff">snapshot-diff</a>
+  it is very easy to read the difference in the snapshot between Scenario A and
+  Scenario B. The tests themselves are compact as well:
+</p>
+<pre class="hljs reasonml"><code class="jsx">
+<span class="hljs-comment">// ParentComponent.spec.jsx</span>
+describe(<span class="hljs-string">"ParentComponent"</span>,<span class="hljs-function"> <span class="hljs-params">()</span> =&gt;</span> {
+  <span class="hljs-keyword">let</span> defaultSnapshot;
+
+
+  it(<span class="hljs-string">"matches the saved snapshot"</span>,<span class="hljs-function"> <span class="hljs-params">()</span> =&gt;</span> {
+    <span class="hljs-comment">// render component with default props</span>
+    const elem = <span class="hljs-comment">// ...</span>
+
+    <span class="hljs-comment">// set the default snapshot to the result of a helper function that generates a snapshot to compare to the stored/generated snapshot</span>
+    defaultSnapshot = render<span class="hljs-constructor">Snapshot(<span class="hljs-params">elem</span>)</span>
+
+    <span class="hljs-comment">// compare the snapshot from this test with the stored/generated snapshot</span>
+    expect(defaultSnapshot).<span class="hljs-keyword">to</span><span class="hljs-constructor">MatchSnapshot()</span>
+  })
+
+  describe(<span class="hljs-string">"is loading"</span>,<span class="hljs-function"> <span class="hljs-params">()</span> =&gt;</span> {
+    it(<span class="hljs-string">"matches the saved snapshot"</span>,<span class="hljs-function"> <span class="hljs-params">()</span> =&gt;</span> {
+      <span class="hljs-comment">// render component with default props except `isLoading` is set to `false`</span>
+      const elem = <span class="hljs-comment">// ...</span>
+      
+      const diffSnapshot = render<span class="hljs-constructor">Snapshot(<span class="hljs-params">elem</span>)</span>
+      
+      <span class="hljs-comment">// generates a snapshot diff thanks to `snapshot-diff` which exposes a new command called `toMatchDiffSnapshot`</span>
+      expect(defaultSnapshot).<span class="hljs-keyword">to</span><span class="hljs-constructor">MatchDiffSnapshot(<span class="hljs-params">diffSnapshot</span>)</span>
+    })
+  })
+})
+</code></pre>
+<p>
+  There is a third and final objection that does carry some weight, in my
+  opinion.
+</p>
+<p>
+  By testing each component individually, and not extending the boundary to test
+  multiple components in one set of tests, there is a gap in testing the
+  integration.
+</p>
+<p>
+  In the example above, we test that
+  <code class="inline-code">ParentComponent</code> renders
+  <code class="inline-code">ChildComponent</code> and that
+  <code class="inline-code">ChildComponent</code> renders
+  <code class="inline-code">GrandChildComponent</code>, and what
+  <code class="inline-code">GrandChildComponent</code> renders to the DOM
+  (assuming it’s at the end of the hierarchy).
+</p>
+<p>
+  In a word, you have all these tests but you don’t really know what the user is
+  seeing.
+</p>
+<h4>
+  How I’ve Typically Handled The Deficiency of Shallow Jest Snapshot Testing
+</h4>
+<p>
+  On my team, in addition to writing unit tests for all of our components, we do
+  “manual testing” where we “test” all the integration points by opening our
+  code locally, setting up the scenarios for each integration point, and taking
+  a screenshot and pasting them into the PR description.
+</p>
+<p>
+  This makes us ensure that the integration of our components is working and the
+  criteria for our changes to be accepted is met–even if all the unit tests are
+  passing.
+</p>
+<p>It’s worked for us but I’ve recently become more curious to ask:</p>
+<blockquote>
+  <p>
+    Do I need all these snapshot tests if the acceptance criteria for my changes
+    are always just verifying the integration?
+  </p>
+</blockquote>
+<p>Let me explain my curiosity a bit further.</p>
+<h4>Why I Became Curious About Moving Away From Shallow Jest Snapshot Testing</h4>
+<p>
+  My preferred approach is to create the boundary of my snapshots one-level deep
+  (so that the <code class="inline-code">return</code> of the component shows
+  the same elements as the snapshot). To do this, I need to shallow render my
+  components.
+</p>
+<p>
+  This may be done with
+  <a href="https://reactjs.org/docs/shallow-renderer.html">React’s Shallow Renderer</a>. React’s documentation, however, recommeneds the usage of the
+  <a href="https://enzymejs.github.io/enzyme/docs/api/shallow.html">Enzyme API for shallow rendering</a>.
+</p>
+<p>
+  My concern with Enzyme is that 1)
+  <a href="https://github.com/enzymejs/enzyme/issues/2429">it has struggled to get official adoption up and running for React 17</a>
+  and 2) the satisfaction in the community seems to have gone done
+  significantly.
+</p>
+<p>
+  It isn’t even on the big chart in the
+  <a href="https://2020.stateofjs.com/en-US/technologies/testing/">2020 State of JavaScript results</a>.
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356235/michael_mangialardi/11_ja9nxy.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  Alternatively, tools like
+  <a href="https://testing-library.com/docs/">React Testing Library</a> have
+  gained a lot of traction. That library, however, operates from a guiding
+  principle that tests should be mostly integration. Boundaries for snapshots
+  tests can be expanded so that the rendered output captured in the snapshots
+  includes what the user actually sees in the browser.
+</p>
+<p>
+  It also means that snapshots can include a “chunk” of the rendered output that
+  tests an integration point (instead of testing the rendered output of
+  individual tests and assume that the integration will work as expected). By
+  integration point, I mean that you test an experience that a user encounters
+  that is a result of multiple components working together.
+</p>
+<p>
+  For example, instead of testing <code class="inline-code">Form</code>,
+  <code class="inline-code">FormHeader</code>,
+  <code class="inline-code">FormBody</code>,
+  <code class="inline-code">FormFooter</code>,
+  <code class="inline-code">TextInput</code>,
+  <code class="inline-code">Label</code>,
+  <code class="inline-code">NumberSelector</code>, etc., components, you can let
+  the boundary be the entire form. By mimicking a user’s actions with the entire
+  form and taking snapshots in all the different scenarios where the rendered
+  output differs, you test the rendered output of a logical chunk, or
+  integration point. Because you test an integration point that the user
+  actually interacts with, you could argue that you have a higher level of
+  confidence that your code is all functioning well together.
+</p>
+<p>
+  In summary, the trend in the community towards mount-based approaches and
+  tools makes the case more compelling.
+</p>
+<p>
+  Still, I have a concern that the larger the boundary of your tests, the more
+  friction when trying to interpret a snapshot and how it got the output it did.
+  Also, the larger the boundary, the larger the tests—and the larger the
+  complexity of the integration point, the larger the complexity to maintain
+  your snapshot tests.
+</p>
+<blockquote>
+  <p>This has me asking, what is the purpose of our snapshot tests anyway?</p>
+</blockquote>
+<h4>What’s the purpose of our snapshot tests?</h4>
+<p>
+  It’s already been mention that mount-based approaches like React Testing
+  Library are guided by the principle that tests resemble the behavior of a
+  user. This type of testing can increase confidence that your code is working
+  for the user, not the developer, as expected.
+</p>
+<blockquote>
+  <p>
+    <a href="https://twitter.com/kentcdodds/status/977018512689455106">The more your tests resemble the way your software is used, the more
+      confidence they can give you. --Kent C. Dodds</a>
+  </p>
+</blockquote>
+<p>
+  This begs some questions. First, is a high level of confidence that the code
+  is working for the user as expected the primary goal of our snapshot tests?
+  Second, are snapshot tests with a mount-based approach the best means to that
+  end?
+</p>
+<p>
+  I can’t give a straight answer to the first question, but I can call out some
+  additional goals, or benefits, of our tests.
+</p>
+<p>
+  First, our tests can effectively work as a commentary of our code. They can
+  help explain what the original intent of the code was, what the different
+  scenarios that cause dynamic rendering are, and when we make changes, how our
+  new code differs from the existing implementation.
+</p>
+<p>
+  They also allow us to refactor with confidence. If we refactor our code, and
+  the rendered output has not changed, we’ll know that we’ve refactored while
+  keeping things intact. Inversely, if our tests break, we want our tests to
+  give us a high level of confidence that we changed something that broke an
+  intended functionality. When we update our test, we want to ensure that we are
+  knowingly updating the functionality.
+</p>
+<p>
+  In weighing these additional benefits of code, it seems that two things are
+  true at once.
+</p>
+<p>
+  We want our tests to give us a high level of confidence that our code is
+  working as the user would expect, and that our code is explained well and is
+  working as originally intended (and that we are knowingly changing that intent
+  when we introduce new code).
+</p>
+<p>
+  In a word, our tests are for the user, to be sure, but they’re also for the
+  developer.
+</p>
+<p>
+  Now, to answer my second question, let’s think about the trade-offs between
+  shallow and mount-based testing for these two main goals of our tests.
+</p>
+<p>
+  Mount-based testing is obviously better for ensuring our code works as the
+  user expects. We’ve discussed that so far. However, I think it is weaker for
+  ensuring that our code is explained well and works as the previous
+  developer(s) that touched it expected.
+</p>
+<p>
+  Let’s say I have one test for the integration of a form that a user interacts
+  with, consisting of many components working together. As a developer, I start
+  to refactor all the components that make up the form, and when I’m done, I
+  realize that the snapshot has failed. It can be hard to track down which
+  component in the hierarchy of the form caused the failing test. If I had
+  shallow-based tests for each component of the form, it would be clear which
+  component caused the failing snapshot (since each component maps to one file
+  with its own snapshots) and how the new code has changed the previous intent.
+  This seems to give an edge to shallow-based snapshots over mount-based,
+  especially as integrations get more complex.
+</p>
+<p>With all this in mind, I had a wild hair idea.</p>
+<blockquote>
+  <p>
+    What if we could have integration/user-like tests and shallow-based tests so
+    we can get all the types of benefits?
+  </p>
+</blockquote>
+<p>
+  That would mean we would have to write integration snapshot tests and
+  shallow-based snapshot tests. That’s a lot of tests for ensuring the rendered
+  output to the DOM.
+</p>
+<p>Hmm…</p>
+<blockquote>
+  <p>
+    What if we can write integration tests that ensure our code is working as
+    the user expects without explicitly testing the rendered output to the DOM.
+  </p>
+</blockquote>
+<h4>An Alternative to Mount-Based Snapshots</h4>
+<p>
+  If the main goal of integration tests is to ensure our code is working as the
+  user expects, why don’t we literally mimic the user and take screenshots of
+  what they see instead of snapshots of code that renders what they see?
+</p>
+<p>
+  This question stirred in my head, and I wanted an answer. So, I looked to see
+  what <a href="https://www.cypress.io/">Cypress</a>, a frontend testing tool
+  for testing your code in the browser and researched to see what was possible.
+</p>
+<p>
+  Cypress can be used to do a variety of styles of testing.
+  <a href="https://projects.invisionapp.com/freehand/document/9beuAG6Rr">Here’s a drawing I made to explain how I conceptualize the differences.</a>
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356235/michael_mangialardi/22_o9ztdp.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  Cypress can be used wherever I’ve mentioned “browser” in describing a type of
+  testing. Cypress can run an application in a real browser and exposes an API
+  to mimic the user.
+</p>
+<p>
+  Previously, I have seen tools like Cypress used for
+  <em>smoke tests</em> (ensuring that the critical parts of your application are
+  working) or cross-browser/responsive design testing.
+</p>
+<p>
+  This type of testing is usually called <em>end-to-end testing</em>, I prefer
+  to call it “browser” testing. I like this because “browser” testing with
+  Cypress can be done in a local or production environment. Testing a production
+  environment (at least how my brain works), is what I associate with end-to-end
+  testing (because you are testing a frontend with a production backend versus
+  testing a frontend with a mock/local backend). If that’s a helpful
+  distinction, great. If not, just ignore it.
+</p>
+<p>
+  The main point is that Cypress has not usually been used for the integration
+  of components. This is done in a tool like Jest. However, I’ve been curious as
+  to whether there is a reason not to use Cypress for these integration tests.
+  The benefit would be that it would run in a real browser and has a robust API
+  for mimicking a user.
+</p>
+<p>
+  Again, if the main goal of integration tests is to ensure our code is working
+  as the user expects, why don’t we literally mimic the user and take
+  screenshots of what they see instead of snapshots of code that renders what
+  they see?
+</p>
+<p>
+  It turns out that I’m not the first to think about moving mount-based,
+  integration tests to an actual browser. Cypress has a Component Testing
+  library that is in <strong>Alpha</strong>.
+</p>
+<p>
+  Ideally, I wanted to use <a href="https://www.cypress.io/">Cypress</a> for
+  <strong>screenshot</strong> tests just like I would Jest for
+  <strong>snapshot</strong> tests.
+</p>
+<p>
+  The Cypress repository for its React Component Testing library had a
+  comparison capturing some of the differences I had been envisioning myself:
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356237/michael_mangialardi/33_g2hdwo.png" alt="cypress-snapshot-testing">
+</p>
+<p>How promising!</p>
+<p>
+  I’ve wanted to approach my Cypress tests in the same way as my Jest tests.
+</p>
+<p>
+  I want to take a screenshot for the “default” case/scenario, and then create
+  an image diff between the default scenario and the “special”/“modifying”
+  scenario. This would be the visual equivalent of using
+  <code class="inline-code">snapshot-diff</code> in my Jest tests as I
+  previously outlined:
+</p>
+<pre class="hljs reasonml"><code class="jsx">
+<span class="hljs-comment">// ParentComponent.spec.jsx</span>
+describe(<span class="hljs-string">"ParentComponent"</span>,<span class="hljs-function"> <span class="hljs-params">()</span> =&gt;</span> {
+  <span class="hljs-keyword">let</span> defaultSnapshot;
+
+  it(<span class="hljs-string">"matches the saved snapshot"</span>,<span class="hljs-function"> <span class="hljs-params">()</span> =&gt;</span> {
+    <span class="hljs-comment">// render component with default props</span>
+    const elem = <span class="hljs-comment">// ...</span>
+
+
+    <span class="hljs-comment">// set the default snapshot to the result of a helper function that generates a snapshot to compare to the stored/generated snapshot</span>
+    defaultSnapshot = render<span class="hljs-constructor">Snapshot(<span class="hljs-params">elem</span>)</span>
+
+
+    <span class="hljs-comment">// compare the snapshot from this test with the stored/generated snapshot</span>
+    expect(defaultSnapshot).<span class="hljs-keyword">to</span><span class="hljs-constructor">MatchSnapshot()</span>
+  })
+
+  describe(<span class="hljs-string">"is loading"</span>,<span class="hljs-function"> <span class="hljs-params">()</span> =&gt;</span> {
+    it(<span class="hljs-string">"matches the saved snapshot"</span>,<span class="hljs-function"> <span class="hljs-params">()</span> =&gt;</span> {
+      <span class="hljs-comment">// render component with default props except `isLoading` is set to `false`</span>
+      const elem = <span class="hljs-comment">// ...</span>
+      
+      const diffSnapshot = render<span class="hljs-constructor">Snapshot(<span class="hljs-params">elem</span>)</span>
+      
+      <span class="hljs-comment">// generates a snapshot diff thanks to `snapshot-diff` which exposes a new command called `toMatchDiffSnapshot`</span>
+      expect(defaultSnapshot).<span class="hljs-keyword">to</span><span class="hljs-constructor">MatchDiffSnapshot(<span class="hljs-params">diffSnapshot</span>)</span>
+    })
+  })
+})
+</code></pre>
+<h5>Cypress Integration Sceenshots Tutorial</h5>
+<h6>Configuration</h6>
+<p>
+  Taking a shot at this approach, I started by initiating a create a new React
+  app and installing Cypress:
+</p>
+<pre class="hljs dsconfig"><code class="bash"><span class="hljs-string">npx</span> <span class="hljs-built_in">create-react-app</span> <span class="hljs-string">cypress-integration-screenshots</span>
+<span class="hljs-built_in"><span class="hljs-string">cd</span></span> <span class="hljs-string">cypress-integration-screenshots</span>
+<span class="hljs-string">npm</span> <span class="hljs-string">i</span> <span class="hljs-string">cypress</span>
+</code></pre>
+<p>
+  I noticed that
+  <a href="https://docs.cypress.io/guides/component-testing/introduction.html#React">Cypress has recently introduced a component testing library</a>
+  so that we can mount a React component and use Cypress commands to carry out
+  actions and write assertions.
+</p>
+<p>The official instructions say to install the following:</p>
+<pre class="hljs awk"><code class="bash"><span class="hljs-regexp">//</span> skip this step
+npm i cypress-react-unit-test
+</code></pre>
+<p>
+  …but
+  <a href="https://github.com/cypress-io/cypress/tree/master/npm/react">digging through the actual source code</a>, it looks like we can install a
+  <code class="inline-code">@cypress/react</code> package (which I did):
+</p>
+<pre class="hljs coffeescript"><code class="has-line-data" data-line-start="240" data-line-end="242"><span class="hljs-built_in">npm</span> i @cypress/react
+</code></pre>
+<p>
+  Before I got rolling with running Cypress, I created a sample application with
+  an integration point that we can test with screenshots.
+</p>
+<p>
+  The mini-application has a Home page with a link to a Pictures page where you
+  can generate random photos with the click of a button.<br>
+  <img src="https://user-images.githubusercontent.com/22566333/105227999-037ccb00-5b30-11eb-8d5e-fd3fbc1fa2d5.gif" alt="enter image description here">
+</p>
+<p>
+  You can clone the starter repository here:
+  <a href="https://github.com/michaelmang/cypress-integration-screenshots">https://github.com/michaelmang/cypress-integration-screenshots</a>
+</p>
+<p>
+  I then updated the <code class="inline-code">scripts</code> in my
+  <code class="inline-code">package.json</code> to open the
+  <a href="https://docs.cypress.io/guides/core-concepts/test-runner.html#Overview">Cypress Test Runner</a>
+  on <code class="inline-code">npm start</code>:
+</p>
+<pre class="hljs awk"><code class="json">
+  <span class="hljs-string">"scripts"</span>: {
+    <span class="hljs-regexp">//</span> ...
+    <span class="hljs-string">"integration-test"</span>: <span class="hljs-string">"cypress open"</span>
+  }
+</code></pre>
+<p>Running <code class="inline-code">npm run integration-test</code>…</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356239/michael_mangialardi/44_z2r0md.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  Cypress lets you know that it is going to create some boilerplate files and
+  organize them for you.
+</p>
+<p>
+  After clicking ok, you should see these new folders and files in your code
+  editor:
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356239/michael_mangialardi/55_o4bdcp.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  You’ll notice some eslint errors in the graphic above. I resolved those by
+  installing <code class="inline-code">eslint-plugin-cypress</code> and
+  configuring it in the <code class="inline-code">package.json</code> file:
+</p>
+<pre class="hljs coffeescript"><code class="bash"><span class="hljs-built_in">npm</span> i eslint-plugin-cypress
+</code></pre>
+<pre class="hljs awk"><code class="diff">
+<span class="hljs-string">"eslintConfig"</span>: {
+  <span class="hljs-string">"extends"</span>: [
+    <span class="hljs-regexp">//</span> ...
+    <span class="hljs-string">"plugin:cypress/recommended"</span>
+  ]
+}
+</code></pre>
+<p>
+  As for the Cypress boilerplate, I decided to remove the
+  <code class="inline-code">fixtures</code> directory as well as the
+  <code class="inline-code">integration</code> one. However, they keep
+  respawning whenever the tests re-ran 🤷‍♂️.
+</p>
+<p>
+  Even though I’ve been calling the testing of chunks of our application as the
+  user interacts with the “integration” tests. Cypress requires you to add all
+  tests using the component testing library in a
+  <code class="inline-code">components</code> folder.
+</p>
+<p>
+  I added the <code class="inline-code">components</code> folder and a
+  subsequent folder corresponding to the page I wanted to test.
+</p>
+<p>For the example app, it looked like this:</p>
+<p>
+  <code class="inline-code">cypress/components/pictures</code>
+</p>
+<p>
+  I also thought it would be a good organization to contain tests for specific
+  integrations (i.e. the form) should a page be more complicated than the ones I
+  created for the demo.
+</p>
+<p>
+  For example,
+  <code class="inline-code">cypress/components/pictures/submitForm</code> if I
+  added a submit form in addition to the picture generator (which I decided not
+  to do in the spirit of keeping this demo simple).
+</p>
+<p>
+  With the demo app created, I configured Cypress to run and test my app in the
+  browser by configuring the <code class="inline-code">baseUrl</code> in
+  <code class="inline-code">cypress.json</code>:
+</p>
+<pre class="hljs json"><code class="json">{
+<span class="hljs-attr">"</span><span class="hljs-attribute"><span class="hljs-attr">baseUrl</span></span><span class="hljs-attr">"</span>: <span class="hljs-value"><span class="hljs-string"><span class="hljs-string">"http://localhost:3000/"</span></span>
+</span>}
+</code></pre>
+<p>
+  Following
+  <a href="https://github.com/cypress-io/cypress/tree/master/npm/react#init">the unofficial instructions for Cypress’ React component testing plugin</a>, I ran a wizard that auto-configured my projects:
+</p>
+<pre class="hljs kotlin"><code class="jsx">npx <span class="hljs-meta">@cypress</span>/react <span class="hljs-keyword">init</span>
+</code></pre>
+<p>That didn’t work…</p>
+<p>…so I did it manually.</p>
+<p>
+  First, I included the plugin in the project’s
+  <code class="inline-code">cypress/support/index.js</code>:
+</p>
+<pre class="hljs stylus"><code class="bash"><span class="hljs-function"><span class="hljs-title">require</span><span class="hljs-params">(</span></span><span class="hljs-string"><span class="hljs-function"><span class="hljs-params"><span class="hljs-string">'@cypress/react/support'</span></span></span></span><span class="hljs-function"><span class="hljs-params">)</span></span>
+</code></pre>
+<p>
+  Second, I added the plugin in the projects
+  <code class="inline-code">cypress/plugins/index.js</code>, so Cypress can load
+  your components:
+</p>
+<pre class="hljs coffeescript"><code class="jsx">
+<span class="hljs-built_in">module</span>.<span class="hljs-built_in">exports</span> = <span class="hljs-function"><span class="hljs-params">(<span class="hljs-literal">on</span>, config)</span> =&gt;</span> {
+  <span class="hljs-regexp">//</span> `<span class="javascript">on</span>` <span class="hljs-keyword">is</span> used to hook into various events Cypress emits
+  <span class="hljs-regexp">//</span> `<span class="javascript">config</span>` <span class="hljs-keyword">is</span> the resolved Cypress config
+  <span class="hljs-built_in">require</span>(<span class="hljs-string">'@cypress/react/plugins/react-scripts'</span>)(<span class="hljs-literal">on</span>, config)
+  <span class="hljs-keyword">return</span> config
+}
+</code></pre>
+<p>
+  Lastly, I turned the experimental component support on in the
+  <code class="inline-code">cypress.json</code>, also specifying the folder with
+  all component tests:
+</p>
+<pre class="hljs json"><code class="json">
+{
+  <span class="hljs-comment">// ...</span>
+  <span class="hljs-attr">"experimentalComponentTesting"</span>: <span class="hljs-literal">true</span>,
+  <span class="hljs-attr">"componentFolder"</span>: <span class="hljs-string">"cypress/components"</span>
+}
+</code></pre>
+<p>
+  One last piece of configuration. There is a
+  <a href="https://github.com/testing-library/cypress-testing-library">Cypress port of Testing Library</a>.
+</p>
+<p>
+  This exposes custom commands (<code class="inline-code">cy.theseAreCommands()</code>) on the <code class="inline-code">cy</code> instance, allowing us to use the
+  same core API as used in React Testing Library (the popular mount-based
+  testing library I’ve mentioned before).
+</p>
+<p>
+  I thought this would not only making selecting/controlling elements in the
+  browser easier but would also make the transition to Cypress tests easier
+  since it’s a familiar API.
+</p>
+<p>I installed this…</p>
+<pre class="hljs coffeescript"><code class="bash"><span class="hljs-built_in">npm</span> i @testing-library/cypress
+</code></pre>
+<p>
+  …and added its custom commands via the projects
+  <code class="inline-code">cypress/support/commands.js</code> file:
+</p>
+<pre class="hljs aspectj"><code class="jsx"><span class="hljs-keyword">import</span> <span class="hljs-string">'@testing-library/cypress/add-commands'</span>
+</code></pre>
+<h6>Writing the Cypress Integration Screenshot Tests</h6>
+<p>
+  Next, I went to write a test that would mount the app page and take a
+  screenshot of the loaded component (just to see what we’re working
+  with–eventually I’ll want to mimic a user’s input to go to the Pictures page
+  and take some screenshots there):
+</p>
+<p>
+  <code class="inline-code">cypress/components/pictures/index.spec.js</code>
+</p>
+<pre class="hljs coffeescript"><code class="jsx">
+<span class="hljs-keyword">import</span> { mount } <span class="hljs-keyword">from</span> <span class="hljs-string">'@cypress/react'</span>
+
+<span class="hljs-keyword">import</span> App <span class="hljs-keyword">from</span> <span class="hljs-string">"../../../src/App"</span>
+
+describe(<span class="hljs-string">'Pictures'</span>, <span class="hljs-function"><span class="hljs-params">()</span> =&gt;</span> {
+  it(<span class="hljs-string">'matches the saved screenshot'</span>, <span class="hljs-function"><span class="hljs-params">()</span> =&gt;</span> {
+    mount(
+      &lt;App /&gt;
+    )
+
+    cy.screenshot()
+  })
+})
+</code></pre>
+<p>I run the test via the test runner…</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356236/michael_mangialardi/66_cpcdkt.png" alt="cypress-snapshot-testing">
+</p>
+<p>…drum roll 🥁…</p>
+<p>…and I see nothing rendered in the browser 🤔</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356238/michael_mangialardi/77_mteu52.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  I then tried mounting the <code class="inline-code">Pictures</code> components
+  as opposed to the entire app and then navigating to it in the browser:
+</p>
+<pre class="hljs javascript"><code class="jsx"><span class="hljs-comment">// cypress/components/pictures/index.spec.js</span>
+<span class="hljs-keyword">import</span> { mount } <span class="hljs-keyword">from</span> <span class="hljs-string">'@cypress/react'</span>
+
+<span class="hljs-keyword">import</span> Pictures <span class="hljs-keyword">from</span> <span class="hljs-string">"../../../src/pages/pictures"</span>
+<span class="hljs-keyword">import</span> getPictures <span class="hljs-keyword">from</span> <span class="hljs-string">'../../../src/utils/getPictures'</span>
+
+describe(<span class="hljs-string">'Pictures'</span>, <span class="hljs-function">() =&gt;</span> {
+  it(<span class="hljs-string">'matches the saved screenshot'</span>, <span class="hljs-function">() =&gt;</span> {
+    renderComponent()
+
+    cy.screenshot()
+  })
+
+  <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">renderComponent</span>(<span class="hljs-params">props = {}</span>) </span>{
+    mount(
+      <span class="xml"><span class="hljs-tag">&lt;<span class="hljs-name">Pictures</span>
+        <span class="hljs-attr">isLoading</span>=<span class="hljs-string">{false}</span>
+        <span class="hljs-attr">data</span>=<span class="hljs-string">{getPictures()}</span>
+        <span class="hljs-attr">onGenerateNewPictures</span>=<span class="hljs-string">{()</span> =&gt;</span> {}}
+        {...props}
+      /&gt;</span>
+    )
+  }
+})
+</code></pre>
+<p>
+  Since this component receives props, I created a handy
+  <code class="inline-code">renderComponent</code> function that will mount the
+  component with the default props, creating the default scenario.
+</p>
+<p>
+  Later on, I figure I can call this function with “modifier” props to get into
+  the “special” scenarios where I (hopefully) can compare screenshots to see the
+  visual difference.
+</p>
+<p>
+  This approach, as opposed to mounting the entire
+  <code class="inline-code">App</code>, is not ideal since I have to mock out
+  the passing of data via props. This is creating some friction with the
+  principle to literally test like the user (since the user doesn’t mock out the
+  flow of data).
+</p>
+<p>
+  But since I couldn’t get the ideal approach to work, it was time to give this
+  one a whirl 🌪️…
+</p>
+<p>This time the component mounted as expected:</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356241/michael_mangialardi/88_diopfa.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  I could also see that <code class="inline-code">cy.screenshot()</code> had
+  stored the screenshot in
+  <code class="inline-code">cypress/screenshots/[currentDirectory]/[currentFile]</code>:
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356236/michael_mangialardi/99_h66uyf.png" alt="cypress-image-snapshot">
+</p>
+<p>
+  So close! I figured it could
+  <s>add a little wait so the pictures can load</s>
+  <a href="https://stackoverflow.com/questions/51246606/test-loading-of-image-in-cypress">follow this suggestion</a>:
+</p>
+<pre class="hljs stylus"><code class="diff">
+<span class="hljs-comment">// cypress/components/pictures/index.spec.jsx</span>
+
+<span class="hljs-function"><span class="hljs-title">renderComponent</span><span class="hljs-params">()</span></span>
+
+<span class="hljs-addition">+ cy.get(<span class="hljs-string">'img'</span>).and((<span class="hljs-variable">$img</span>) =&gt; {</span>
+<span class="hljs-addition">+   expect(<span class="hljs-variable">$img</span>[<span class="hljs-number">0</span>].naturalWidth)<span class="hljs-selector-class">.to</span><span class="hljs-selector-class">.be</span>.greaterThan(<span class="hljs-number">0</span>)</span>
+<span class="hljs-addition">+ })</span>
+
+cy.screenshot()
+</code></pre>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356236/michael_mangialardi/1010_ecnmm6.png" alt="cypress-snapshot-testing">
+</p>
+<p>That’s better!</p>
+<p>
+  Finally, the moment I had been waiting for…doing a snapshot of a “special”
+  scenario (when the component is loading in this case).
+</p>
+<pre class="hljs coffeescript"><code class="jsx">
+<span class="hljs-regexp">//</span> cypress/components/pictures/index.jsx
+describe(<span class="hljs-string">"is loading"</span>, <span class="hljs-function"><span class="hljs-params">()</span> =&gt;</span> {
+  it(<span class="hljs-string">'matches the saved screenshot'</span>, <span class="hljs-function"><span class="hljs-params">()</span> =&gt;</span> {
+    renderComponent({
+      isLoading: <span class="hljs-literal">true</span>,
+    })
+
+
+    cy.screenshot()
+  })
+})
+</code></pre>
+<p>
+  The test ran this additional scenario and generated the expected snapshot:
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356236/michael_mangialardi/1111_ktr9rq.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  For the final meat and taters, I just needed to use some sort of Cypress
+  plugin to do a visual regression test between the default screenshot (not
+  loading) and the special snapshot (loading).
+</p>
+<p>
+  Poking around the official documentation of visual testing plugins,
+  <a href="https://docs.cypress.io/plugins/#visual-testing">I noticed something about doing snapshot testing for your Cypress component
+    tests</a>.
+</p>
+<p>
+  <a href="https://github.com/meinaart/cypress-plugin-snapshots">It turns out that there was a plugin for generating JSON snapshots OR
+    <strong>image snapshots</strong></a>.
+</p>
+<p>BINGO!</p>
+<p>So I follow the documented configuration…</p>
+<ol>
+  <li class="has-line-data" data-line-start="483" data-line-end="485">
+    Install the plugin<br>
+    <code class="inline-code">npm install cypress-plugin-snapshots</code>
+  </li>
+  <li class="has-line-data" data-line-start="485" data-line-end="489">
+    Add the plugin to <code class="inline-code">cypress/plugins/index.js</code>
+    <pre class="hljs livecodeserver"><code class="diff"><span class="hljs-addition">+ <span class="hljs-built_in">require</span>(<span class="hljs-string">'cypress-plugin-snapshots/plugin'</span>).initPlugin(<span class="hljs-keyword">on</span>, <span class="hljs-title">config</span>)</span>
+</code></pre>
+  </li>
+  <li class="has-line-data" data-line-start="489" data-line-end="493">
+    Add the import to <code class="inline-code">cypress/support/index.js</code>
+    <pre class="hljs aspectj"><code class="diff"><span class="hljs-addition">+ <span class="hljs-keyword">import</span> <span class="hljs-string">'cypress-plugin-snapshots/commands'</span></span>
+</code></pre>
+  </li>
+</ol>
+<p>
+  Finally, I had to update my tests so that the “default” screenshot had a
+  specified name, that way, I could update the “special” screenshot to compare
+  to the default (by
+  <a href="https://github.com/meinaart/cypress-plugin-snapshots#usage-for-image-snapshots">passing the name as an option</a>
+  to the new <code class="inline-code">cy.toMatchImageSnapshot()</code> command:
+</p>
+<pre class="hljs awk"><code class="diff">
+<span class="hljs-regexp">//</span> cypress<span class="hljs-regexp">/components/</span>pictures/index.spec.jsx
+
+<span class="hljs-addition">+ const DEFAULT_SNAPSHOT = { name:<span class="hljs-string">"cypress_components_pictures__default_snapshot"</span> }</span>
+
+<span class="hljs-regexp">//</span> ...
+
+it(<span class="hljs-string">'matches the saved screenshot'</span>, () =&gt; {
+  <span class="hljs-regexp">//</span> ...
+  <span class="hljs-addition">+   cy.get(<span class="hljs-string">"body"</span>).toMatchImageSnapshot(DEFAULT_SNAPSHOT)</span>
+})
+
+describe(<span class="hljs-string">"is loading"</span>, () =&gt; {
+  it(<span class="hljs-string">'matches the saved screenshot'</span>, () =&gt; {
+    <span class="hljs-regexp">//</span> ...
+  <span class="hljs-addition">+      cy.get(<span class="hljs-string">"body"</span>).toMatchImageSnapshot(DEFAULT_SNAPSHOT)</span>
+  })
+})
+</code></pre>
+<p>
+  The one difference with the
+  <code class="inline-code">toMatchImageSnapshot</code> command is that it has
+  to be called on a selected DOM element, not the global
+  <code class="inline-code">cy</code>. Since I wanted the entire page, I
+  selected the <code class="inline-code">body</code> element.
+</p>
+<p>Crossing my fingers 🤞 …</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356236/michael_mangialardi/1212_x9kukh.png" alt="cypress-snapshot-testing">
+</p>
+<p>Did it work?</p>
+<p>
+  Ok, so it added the screenshots to a generated
+  <code class="inline-code">__image_snapshots__</code> folder in the same
+  directory as the test, similar to how Jest snapshots generate a
+  <code class="inline-code">__snapshots__</code>.
+</p>
+<p>
+  That makes sense. However, by doing this, the generated snapshots appear in
+  the test runner (even though they aren’t tests):
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356235/michael_mangialardi/1313_qkljwm.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  It looks like I missed a step in the documentation that can override this
+  behavior by updating the project’s
+  <code class="inline-code">cypress.json</code>:
+</p>
+<pre class="hljs prolog"><code class="json"><span class="hljs-string">"ignoreTestFiles"</span>: [
+<span class="hljs-string">"**/__snapshots__/*"</span>,
+<span class="hljs-string">"**/__image_snapshots__/*"</span>
+]
+</code></pre>
+<p>Phew!</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356236/michael_mangialardi/1414_hk08dw.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  Another observation, I personally prefer the distinction between “snapshots”
+  and “screenshots” for stored JSON blobs versus images. However,
+  <a href="https://github.com/meinaart/cypress-plugin-snapshots#make-changes-to-default-configuration">looking at the possible configuration overrides</a>, there is no option to rename
+  <code class="inline-code">__image_snapshots__</code> to
+  <code class="inline-code">__screenshots__</code> (and I double-checked the
+  documentation this time), so I’ll have to stick with it.
+</p>
+<p>
+  My final observation was disappointing. I was hoping that providing the same
+  name for each screenshot would show the visual difference between the first
+  screenshot and the second screenshot. By doing this, I would effectively have
+  implemented
+  <a href="https://www.npmjs.com/package/snapshot-diff">snapshot-diff</a>
+  with Cypress.
+</p>
+<p>
+  It turns out that it appends duplicate test names with
+  <code class="inline-code">#[index]</code>.
+</p>
+<p>
+  After my first test run, there were
+  <code class="inline-code">cypress_components_pictures__default_snapshot #0</code>
+  and
+  <code class="inline-code">cypress_components_pictures__default_snapshot #1</code>
+  screenshots.
+</p>
+<p>
+  Thinking about it, this isn’t too surprising. I think the intention of the
+  <code class="inline-code">cypress-plugin-snapshots</code> plugin is to work
+  like Jest snapshots. It will store a screenshot/image snapshot for each
+  individual test where you call
+  <code class="inline-code">toMatchImageSnapshot</code>. If you change the
+  rendered output for that scenario, it will then show the diff.
+</p>
+<p>I confirmed this by running the tests again:</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356238/michael_mangialardi/1515_fkeitw.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356238/michael_mangialardi/1616_hi7qsw.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  The test fails because there was a difference between the rendered output
+  shown in the <em>stored screenshot</em> and the <em>current snapshot</em> when
+  the test ran.
+</p>
+<p>
+  Normally, this would only happen when you make an actual change in the
+  component. It broke with my application because the pictures are new on every
+  load, which is an edge case.
+</p>
+<p>
+  What If I change the title of the page from “Pictures” to “Fresh Pictures”?
+</p>
+<pre class="hljs awk"><code class="diff">
+<span class="hljs-regexp">//</span> src<span class="hljs-regexp">/pages/</span>pictures.js
+<span class="hljs-deletion">- Pictures</span>
+<span class="hljs-addition">+ Fresh Pictures</span>
+</code></pre>
+<p>
+  As I expected, I see a failing test because of a failed snapshot comparison.
+  We see the visual difference in the page title:
+</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356236/michael_mangialardi/1717_or4fdr.png" alt="cypress-snapshot-testing">
+</p>
+<p>
+  However, I don’t see a snapshot diff for the loading scenario (even though it
+  had the same title change). In fact, I don’t see any screenshot in the loading
+  scenario with the new title “Fresh Pictures.”
+</p>
+<p>
+  Ok, the test is failing. What is the equivalent of pressing
+  <code class="inline-code">-u</code> in Jest?
+</p>
+<p>
+  I couldn’t figure it out other than to enable this to be done automatically by
+  updating this property in <code class="inline-code">cypress.json</code>:
+</p>
+<pre class="hljs yaml"><code class="json">
+<span class="hljs-attr">"env":</span> {
+  <span class="hljs-attr">"cypress-plugin-snapshots":</span> {
+    <span class="hljs-attr">"updateSnapshots":</span> <span class="hljs-literal">true</span>
+  }
+}
+</code></pre>
+<p>Running the test again, the snapshots pass.</p>
+<p>
+  <img src="http://res.cloudinary.com/dpzpn0xkz/image/upload/v1611356237/michael_mangialardi/1818_nnrw3a.png" alt="cypress-snaphot-testing">
+</p>
+<p>
+  I see that the loading scenario in the test browser has the new title, but I
+  still don’t see a stored screenshot for it. I concluded that my attempt to get
+  a snapshot diff by using the same name is causing some weirdness.
+</p>
+<p>That’s all the experimentation I’m going to do for now.</p>
+<p>
+  <strong>You can see the final code here:</strong>
+  <a href="https://github.com/michaelmang/cypress-integration-screenshots/pull/1">https://github.com/michaelmang/cypress-integration-screenshots/pull/1</a>
+</p>
+<h4>Conclusion</h4>
+<p>
+  Ok, so I was able to confirm that you could use Cypress screenshots to replace
+  Jest snapshot testing. It’s definitely not as smooth but maybe there’s some
+  potential for the future. An important ask would be to have a smooth way to
+  compare failing snapshots and update screenshots in the test runner, similar
+  to Jest. I have to remember that Cypress’ support for testing React components
+  is in Alpha.
+</p>
+<p>
+  A disappointment was that there seems to be no way to do a “screenshot diff”
+  so that you can interpret what is different between different scenarios (like
+  I’m used to doing with Jest snapshots).
+</p>
+<p>Maybe this isn’t needed.</p>
+<p>
+  With Jest snapshots, you are looking at a JSON blob so a tool like
+  snapshot-diff is very valuable so you can know what is different between your
+  default snapshot and the special scenarios. With Cypress screenshots, it’s a
+  graphic. Your eye has a better shot at determining the difference when
+  comparing images versus when comparing JSON blobs.
+</p>
+<p>
+  After all, the process of updating Jest snapshots is not fully automatic
+  either. You have to carefully review the snapshots and ensure that the changes
+  are what you expect before updating. Can the developer make a mistake?
+  Definitely. But a developer can make mistakes in other places besides snapshot
+  tests. Snapshot tests have to be a part of the code review process along with
+  all the other code.
+</p>
+<p>
+  The bottom line is that if you prefer to (mostly) write tests that behave like
+  the user, transitioning to Cypress screenshots seems to be the next logical
+  step–assuming that the tooling gets its needed update.
+</p>
+<p>
+  If you see value in shallow-based testing but want to fill in the gap for
+  integration testing, Cypress integration tests could be used to fill that gap.
+</p>
+<p>
+  Of course, it all comes down to how much effort you can afford to spend, and
+  you must weigh the tradeoffs for yourself.
+</p>
+<p>
+  I hope this article helps you through weighing those tradeoffs and helps all
+  of us to think through these problems so we can make an impact through the
+  creation of an improved array of frontend tools.
+</p>
+<p>Would love to hear y’alls thoughts. Cheers!</p></main>
